@@ -73,6 +73,92 @@ function deleteTodayEntry(index){
 }
 
 /* =====================================================================
+   Play sessions — a session is just "everything since the last comment
+   line" (a date header or an explicit "// SESSION <iso>" marker). Both
+   parsers already skip every line starting with "//" unconditionally,
+   so this marker is fully compatible with the existing data format and
+   with vantage-graph.html without any changes to either.
+   ===================================================================== */
+const SESSION_MARKER_PREFIX = "// SESSION ";
+
+function startNewSession(){
+  let out = getText().replace(/\s+$/, "");
+  out += (out.length ? "\n\n" : "") + SESSION_MARKER_PREFIX + new Date().toISOString() + "\n";
+  setText(out);
+}
+
+function getSessionEntries(text = getText()){
+  const lines = text.split("\n");
+  let startIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--){
+    if (lines[i].trim().startsWith("//")){ startIdx = i; break; }
+  }
+  if (startIdx === -1) return { startedAt: null, entries: [] };
+
+  const markerLine = lines[startIdx].trim();
+  const startedAt = markerLine.startsWith(SESSION_MARKER_PREFIX)
+    ? markerLine.slice(SESSION_MARKER_PREFIX.length)
+    : null;
+
+  const entries = [];
+  for (let i = startIdx + 1; i < lines.length; i++){
+    const line = lines[i].trim();
+    if (!line || line.startsWith("//")) continue;
+    const id = line.split(/\s+/)[0];
+    if (id) entries.push({ id, line, lineIndex: i });
+  }
+  return { startedAt, entries };
+}
+
+/* Finds the most recently written line for a given location id, so it can
+   be reloaded into the Add form for amending rather than duplicated. */
+function findLastLineForId(id){
+  const lines = getText().split("\n");
+  for (let i = lines.length - 1; i >= 0; i--){
+    const line = lines[i].trim();
+    if (!line || line.startsWith("//")) continue;
+    if (line.split(/\s+/)[0] === id) return { lineIndex: i, line };
+  }
+  return null;
+}
+
+function parseLocationLine(line){
+  const parts = line.trim().split(/\s+/);
+  const id = parts[0];
+  if (!id) return null;
+  const dirs = { N: "unknown", E: "unknown", S: "unknown", W: "unknown" };
+  const dirValues = { N: "", E: "", S: "", W: "" };
+  let type = "None";
+  const actions = [];
+  const bonuses = [];
+
+  parts.slice(1).forEach(p => {
+    if (p.startsWith("T:")){
+      type = p.slice(2) || "None";
+    } else if (p.startsWith("A:")){
+      p.slice(2).split(",").forEach(a => {
+        const [label, target] = a.split("->");
+        if (label && target) actions.push({ label, target });
+      });
+    } else if (p.startsWith("B:")){
+      p.slice(2).split(",").forEach(b => {
+        const [label, ...rest] = b.split("->");
+        const desc = rest.join("->");
+        if (label && desc) bonuses.push({ label, desc });
+      });
+    } else {
+      const [dir, target] = p.split(":");
+      if (!DIRS.includes(dir)) return;
+      if (target === "---") dirs[dir] = "wall";
+      else if (!target || target === "***") dirs[dir] = "unknown";
+      else { dirs[dir] = "id"; dirValues[dir] = target; }
+    }
+  });
+
+  return { id, dirs, dirValues, type, actions, bonuses };
+}
+
+/* =====================================================================
    Parsing (mirrors vantage-graph.html's parser) — used for stats,
    duplicate-id warnings and autocomplete, not for the graph itself.
    ===================================================================== */
@@ -122,6 +208,18 @@ function parseAll(text){
    Add-location form
    ===================================================================== */
 const dirState = {};
+let editingLineIndex = null; // non-null while amending a previously-saved line in place
+
+function setDirUI(d, mode, value){
+  const row = document.querySelectorAll("#dirGrid .dirrow")[DIRS.indexOf(d)];
+  const buttons = row.querySelectorAll(".seg button");
+  const input = row.querySelector("input");
+  buttons.forEach(b => b.classList.toggle("sel", b.dataset.mode === mode));
+  dirState[d].mode = mode;
+  dirState[d].value = mode === "id" ? (value || "") : "";
+  input.value = dirState[d].value;
+  input.classList.toggle("show", mode === "id");
+}
 
 function buildDirGrid(){
   const grid = document.getElementById("dirGrid");
@@ -161,27 +259,27 @@ function getDirToken(d){
   return "***";
 }
 
-function addActionRow(){
+function addActionRow(label = "", target = ""){
   const container = document.getElementById("actionRows");
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <input type="text" class="label-input" list="actionLabelList" placeholder="Look/Move" autocomplete="off">
+    <input type="text" class="label-input" list="actionLabelList" placeholder="Look/Move" autocomplete="off" value="${escapeHtml(label)}">
     <span class="arrow">&#8594;</span>
-    <input type="text" class="target-input" inputmode="numeric" list="idList" placeholder="target ID" autocomplete="off">
+    <input type="text" class="target-input" inputmode="numeric" list="idList" placeholder="target ID" autocomplete="off" value="${escapeHtml(target)}">
     <button type="button" class="rm">&times;</button>
   `;
   row.querySelector(".rm").onclick = () => row.remove();
   container.appendChild(row);
 }
-function addBonusRow(){
+function addBonusRow(label = "", desc = ""){
   const container = document.getElementById("bonusRows");
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <input type="text" class="label-input" list="bonusLabelList" placeholder="Red/Hunt" autocomplete="off">
+    <input type="text" class="label-input" list="bonusLabelList" placeholder="Red/Hunt" autocomplete="off" value="${escapeHtml(label)}">
     <span class="arrow">&#8594;</span>
-    <input type="text" class="target-input" placeholder="outcome / item / lesson" autocomplete="off">
+    <input type="text" class="target-input" placeholder="outcome / item / lesson" autocomplete="off" value="${escapeHtml(desc)}">
     <button type="button" class="rm">&times;</button>
   `;
   row.querySelector(".rm").onclick = () => row.remove();
@@ -212,16 +310,64 @@ function onSave(){
   if (actions.length) line += ` A:${actions.join(",")}`;
   if (bonuses.length) line += ` B:${bonuses.join(",")}`;
 
-  appendLine(line);
+  if (editingLineIndex !== null){
+    const lines = getText().split("\n");
+    lines[editingLineIndex] = line;
+    setText(lines.join("\n"));
+  } else {
+    appendLine(line);
+  }
 
-  idInput.value = "";
-  document.getElementById("dupWarning").classList.remove("show");
-  buildDirGrid();
-  document.getElementById("actionRows").innerHTML = ""; addActionRow();
-  document.getElementById("bonusRows").innerHTML = ""; addBonusRow();
+  cancelEdit();
   idInput.focus();
 
   refreshEverything();
+}
+
+/* Pulls the most recently saved line for `id` back into the form so it can
+   be amended (directions/type corrected, or new actions appended) instead
+   of logged again as a duplicate. Saving replaces that line in place. */
+function loadForEdit(id){
+  const found = findLastLineForId(id);
+  if (!found) return;
+  const parsed = parseLocationLine(found.line);
+  if (!parsed) return;
+
+  editingLineIndex = found.lineIndex;
+
+  document.getElementById("idInput").value = parsed.id;
+  DIRS.forEach(d => setDirUI(d, parsed.dirs[d], parsed.dirValues[d]));
+  document.getElementById("typeInput").value = parsed.type;
+
+  document.getElementById("actionRows").innerHTML = "";
+  parsed.actions.forEach(a => addActionRow(a.label, a.target));
+  addActionRow();
+
+  document.getElementById("bonusRows").innerHTML = "";
+  parsed.bonuses.forEach(b => addBonusRow(b.label, b.desc));
+  addBonusRow();
+
+  document.getElementById("saveBtn").textContent = "Update Location";
+
+  const banner = document.getElementById("dupWarning");
+  banner.className = "warn-banner show editing";
+  banner.innerHTML = `Editing existing entry for <b>${escapeHtml(id)}</b> — saving will update it in place. <button type="button" id="btnCancelEdit">Cancel</button>`;
+  document.getElementById("btnCancelEdit").onclick = cancelEdit;
+
+  switchView("add");
+  window.scrollTo(0, 0);
+}
+
+function cancelEdit(){
+  editingLineIndex = null;
+  document.getElementById("idInput").value = "";
+  document.getElementById("saveBtn").textContent = "Save Location";
+  const banner = document.getElementById("dupWarning");
+  banner.className = "warn-banner";
+  banner.innerHTML = "";
+  buildDirGrid();
+  document.getElementById("actionRows").innerHTML = ""; addActionRow();
+  document.getElementById("bonusRows").innerHTML = ""; addBonusRow();
 }
 
 function renderTodayList(){
@@ -432,6 +578,28 @@ function renderGraph(text){
     });
   });
 
+  // Current play session's route: the ordered sequence of locations added
+  // since the last date header / "New Session" marker, restricted to
+  // locations that resolved to a node (so a typo'd target doesn't crash
+  // the overlay). Consecutive repeats collapse into a single stop.
+  const session = getSessionEntries(text);
+  const routeStops = [];
+  session.entries.forEach(e => {
+    if (!nodes[e.id]) return;
+    if (routeStops.length && routeStops[routeStops.length - 1].id === e.id) return;
+    routeStops.push({ id: e.id, order: routeStops.length + 1 });
+  });
+  const sessionIds = new Set(routeStops.map(s => s.id));
+  const routeSegments = [];
+  for (let i = 1; i < routeStops.length; i++){
+    routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
+  }
+  document.getElementById("g-sessionInfo").textContent = routeStops.length
+    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} this session (${sessionIds.size} unique)`
+    : "No stops recorded yet this session.";
+
+  document.getElementById("g-editSelected").style.display = "none";
+
   const empty = document.getElementById("g-empty");
   const svgEl = document.getElementById("g-svg");
   if (Object.keys(nodes).length === 0){
@@ -509,6 +677,7 @@ function renderGraph(text){
     d3.selectAll("#graphHost .dim").classed("dim", false);
     d3.selectAll("#graphHost .highlight-node").classed("highlight-node", false);
     d3.selectAll("#graphHost .highlight-edge").classed("highlight-edge", false);
+    document.getElementById("g-editSelected").style.display = "none";
   });
 
   let chargeStrength = +document.getElementById("g-chargeSlider").value;
@@ -576,17 +745,31 @@ function renderGraph(text){
     redraw();
   }
 
-  viewport.append("defs").append("marker")
+  const defs = viewport.append("defs");
+  defs.append("marker")
     .attr("id","g-arrowhead")
     .attr("viewBox","-0 -5 10 10")
     .attr("refX",15).attr("refY",0).attr("orient","auto")
     .attr("markerWidth",6).attr("markerHeight",6)
     .append("path").attr("d","M 0,-5 L 10,0 L 0,5").attr("fill","#999").style("stroke","none");
+  defs.append("marker")
+    .attr("id","g-arrowhead-route")
+    .attr("viewBox","-0 -5 10 10")
+    .attr("refX",15).attr("refY",0).attr("orient","auto")
+    .attr("markerWidth",6).attr("markerHeight",6)
+    .append("path").attr("d","M 0,-5 L 10,0 L 0,5").attr("fill","#e0399b").style("stroke","none");
+
+  let showRoute = document.getElementById("g-routeToggle").checked;
+  document.getElementById("g-routeToggle").onchange = function(){
+    showRoute = this.checked;
+    redraw();
+  };
 
   const boardBoxSel = viewport.append("rect").attr("class","board-box");
   const componentLayer = viewport.append("g");
   const edgeLayer = viewport.append("g");
   const actionLayer = viewport.append("g");
+  const routeLayer = viewport.append("g");
   const nodeLayer = viewport.append("g");
   const specialLayer = viewport.append("g");
 
@@ -647,6 +830,24 @@ function renderGraph(text){
       .attr("x", d => { const s=nodes[d.source],t=nodes[d.target]; const mx=(s.x+t.x)/2; return 0.25*s.x+0.5*mx+0.25*t.x; })
       .attr("y", d => { const s=nodes[d.source],t=nodes[d.target]; const my=(s.y+t.y)/2-60; return 0.25*s.y+0.5*my+0.25*t.y; });
 
+    routeLayer.selectAll(".route-edge")
+      .data(showRoute ? routeSegments : [], (d,i) => i)
+      .join("line")
+      .attr("class","route-edge")
+      .attr("marker-end","url(#g-arrowhead-route)")
+      .attr("x1", d => nodes[d.source].x).attr("y1", d => nodes[d.source].y)
+      .attr("x2", d => nodes[d.target].x).attr("y2", d => nodes[d.target].y);
+
+    routeLayer.selectAll(".route-stop")
+      .data(showRoute ? routeStops : [], d => d.id + "-" + d.order)
+      .join(enter => {
+        const g = enter.append("g").attr("class","route-stop");
+        g.append("circle").attr("r", 11);
+        g.append("text").attr("text-anchor","middle").attr("dy", 4).text(d => d.order);
+        return g;
+      })
+      .attr("transform", d => `translate(${nodes[d.id].x + 34},${nodes[d.id].y - 30})`);
+
     nodeLayer.selectAll(".node")
       .data(allNodes, d => d.id)
       .join(enter => {
@@ -657,12 +858,13 @@ function renderGraph(text){
           })
           .on("mousemove", (event) => { tooltip.style("left",(event.pageX+10)+"px").style("top",(event.pageY+10)+"px"); })
           .on("mouseout", () => tooltip.style("display","none"))
-          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); });
+          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); showEditButton(d.id); });
         g.append("rect").attr("x",-45).attr("y",-22).attr("width",90).attr("height",44);
         g.append("text").attr("text-anchor","middle").attr("dy",".35em").text(d => d.id);
         return g;
       })
-      .attr("transform", d => `translate(${d.x},${d.y})`);
+      .attr("transform", d => `translate(${d.x},${d.y})`)
+      .classed("session-node", d => showRoute && sessionIds.has(d.id));
 
     specialLayer.selectAll(".special-marker")
       .data(specialsData, d => d.node.id + "-" + d.dir)
@@ -687,6 +889,13 @@ function renderGraph(text){
         if (d.dir==="W") dx=-60;
         return `translate(${d.node.x+dx},${d.node.y+dy})`;
       });
+  }
+
+  function showEditButton(nodeId){
+    const btn = document.getElementById("g-editSelected");
+    btn.textContent = `Edit ${nodeId}`;
+    btn.style.display = "flex";
+    btn.onclick = () => loadForEdit(nodeId);
   }
 
   function highlightConnections(nodeId){
@@ -750,6 +959,12 @@ function wireGraphTab(){
   document.getElementById("g-btnFit").onclick = () => graphApi.zoomFitAll && graphApi.zoomFitAll();
   document.getElementById("g-btnOverlap").onclick = () => graphApi.detectOverlaps && graphApi.detectOverlaps();
   document.getElementById("g-btnRefresh").onclick = () => renderGraph(getText());
+  document.getElementById("g-btnNewSession").onclick = () => {
+    if (confirm("Start a new play session? The route overlay will restart from here — earlier locations stay on the map.")){
+      startNewSession();
+      refreshEverything();
+    }
+  };
 }
 
 /* =====================================================================
@@ -761,18 +976,21 @@ function init(){
   addActionRow();
   addBonusRow();
 
-  document.getElementById("addActionRow").onclick = addActionRow;
-  document.getElementById("addBonusRow").onclick = addBonusRow;
+  document.getElementById("addActionRow").onclick = () => addActionRow();
+  document.getElementById("addBonusRow").onclick = () => addBonusRow();
   document.getElementById("saveBtn").onclick = onSave;
 
   document.getElementById("idInput").addEventListener("input", e => {
+    if (editingLineIndex !== null) return; // editing banner/Cancel stays until saved or cancelled
     const id = e.target.value.trim();
     const banner = document.getElementById("dupWarning");
     if (id && parseAll(getText()).definedIds.has(id)){
-      banner.textContent = `Location ${id} is already recorded. Saving will add a duplicate entry.`;
-      banner.classList.add("show");
+      banner.className = "warn-banner show";
+      banner.innerHTML = `Location <b>${escapeHtml(id)}</b> is already recorded. Saving will add a duplicate entry. <button type="button" id="btnLoadExisting">Load &amp; edit existing</button>`;
+      document.getElementById("btnLoadExisting").onclick = () => loadForEdit(id);
     } else {
-      banner.classList.remove("show");
+      banner.className = "warn-banner";
+      banner.innerHTML = "";
     }
   });
 

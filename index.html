@@ -92,6 +92,11 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
   border-radius:8px; padding:8px 10px; font-size:13px; margin-bottom:12px; display:none;
 }
 .warn-banner.show{ display:block; }
+.warn-banner.editing{ background:#0f3f2a; border-color:var(--ok); color:var(--ok); }
+.warn-banner button{
+  background:var(--panel2); border:1px solid var(--border); color:var(--text);
+  border-radius:6px; padding:5px 9px; font-size:12px; margin-left:4px; cursor:pointer;
+}
 
 .save-btn{
   width:100%; background:var(--accent); color:#04202b; font-weight:700; font-size:17px;
@@ -144,6 +149,18 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
 #graphHost .highlight-node rect{ stroke:#ff6600; stroke-width:4; }
 #graphHost .highlight-edge{ stroke:#ff6600 !important; stroke-width:4 !important; }
 #graphHost .dim{ opacity:0.15; }
+
+/* Session route overlay */
+#graphHost .session-node rect{ stroke:#e0399b; stroke-width:4; }
+#graphHost .route-edge{ stroke:#e0399b; stroke-width:3; stroke-dasharray:4 4; opacity:0.85; }
+#graphHost .route-stop circle{ fill:#e0399b; stroke:white; stroke-width:1.5; }
+#graphHost .route-stop text{ fill:white; font-size:11px; font-weight:700; pointer-events:none; }
+
+#g-editSelected{
+  position:absolute; bottom:16px; right:16px; background:#e0399b; color:white; font-weight:700;
+  padding:10px 16px; border-radius:999px; display:none; align-items:center; justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,0.3); z-index:20; font-size:13px; cursor:pointer;
+}
 
 #g-menuToggle{
   position:absolute; bottom:16px; left:16px; background:white; color:#111; width:40px; height:40px;
@@ -218,7 +235,16 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
       <svg id="g-svg"><g id="g-viewport"></g></svg>
       <div class="g-tooltip" id="g-tooltip"></div>
       <div id="g-menuToggle">&#9776;</div>
+      <div id="g-editSelected"></div>
       <div id="g-toolbar">
+        <h4 style="margin:0;">Play session</h4>
+        <div class="toolbar-entry" id="g-sessionInfo">No stops recorded yet this session.</div>
+        <div class="toolbar-entry">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="g-routeToggle" checked> Show route overlay
+          </label>
+        </div>
+        <button type="button" id="g-btnNewSession">New Session</button>
         <div id="g-overlapOutput">No overlaps detected</div>
         <br>
         <button type="button" id="g-btnOverlap">Show Overlaps</button>

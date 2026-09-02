@@ -16,7 +16,11 @@ python3 -m http.server 8934 --directory /media/sf_CLAUDE/Vantage
 
 This is also configured as the `vantage-pwa` launch target in [.claude/launch.json](.claude/launch.json) for the Browser preview tool. Open `http://localhost:8934/index.html`.
 
-Deploy is via GitHub Pages, serving directly from this repo (github.com/killermikeb/vantage-location-log) — no build step, so whatever is committed to the deployed branch is what's live.
+Deploy is via GitHub Pages (github.com/killermikeb/vantage-location-log) — no build step, so whatever lands on `gh-pages` is what's live. Two workflows manage that branch, both using `peaceiris/actions-gh-pages` / `rossjrw/pr-preview-action` with `keep_files: true` so neither wipes the other's output:
+- [.github/workflows/deploy-production.yml](.github/workflows/deploy-production.yml): on push to `main`, publishes the repo root to the root of `gh-pages` — that's the live site.
+- [.github/workflows/deploy-preview.yml](.github/workflows/deploy-preview.yml): on PR open/sync/reopen, publishes that branch to `gh-pages` under `pr-preview/pr-<number>/` and comments the preview link on the PR; removes it on close.
+
+This requires the repo's Settings → Pages source to be "Deploy from a branch" → `gh-pages` → `/ (root)` (not the "GitHub Actions" build type — that mode replaces the whole site on every deploy and can't host the two side by side). `.nojekyll` at the repo root disables Jekyll processing, which is required here: `vantage-graph.html` contains a `{{ $json.data }}` template placeholder that Jekyll's Liquid engine would otherwise try to interpret.
 
 ## Conventions & Patterns
 

@@ -1,0 +1,33 @@
+name: Deploy Pages (PR preview)
+
+# Publishes a preview of the PR's branch to gh-pages under
+# pr-preview/pr-<number>/, alongside (not replacing) the production site
+# that deploy-production.yml keeps at the branch root. Posts/updates a
+# sticky comment on the PR with the preview link, and removes the preview
+# directory automatically when the PR closes.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pages-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy PR preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview

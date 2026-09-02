@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,9 +14,22 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 :root{
-  --bg:#0f172a; --panel:#1e293b; --panel2:#273548; --border:#334155;
-  --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent-dim:#0ea5e9;
-  --danger:#f87171; --ok:#4ade80; --warn:#fbbf24;
+  --bg:#f5f5f5; --panel:#ffffff; --panel2:#eeeeee; --border:#cccccc;
+  --text:#222222; --muted:#777777; --accent:#4ea9ff; --accent-dim:#1d78d6;
+  --danger:#d9534f; --ok:#28a745; --warn:#ffb400;
+  --warn-tint:#fff3cd; --warn-text:#856404;
+  --ok-tint:#d4edda; --ok-text:#155724;
+  --danger-border:#e6b3b3;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273548; --border:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent-dim:#0ea5e9;
+    --danger:#f87171; --ok:#4ade80; --warn:#fbbf24;
+    --warn-tint:#3f2d0f; --warn-text:#fbbf24;
+    --ok-tint:#0f3f2a; --ok-text:#4ade80;
+    --danger-border:#5a2a2a;
+  }
 }
 *{box-sizing:border-box;}
 html,body{height:100%;}
@@ -88,11 +102,11 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
 }
 
 .warn-banner{
-  background:#3f2d0f; border:1px solid var(--warn); color:var(--warn);
+  background:var(--warn-tint); border:1px solid var(--warn); color:var(--warn-text);
   border-radius:8px; padding:8px 10px; font-size:13px; margin-bottom:12px; display:none;
 }
 .warn-banner.show{ display:block; }
-.warn-banner.editing{ background:#0f3f2a; border-color:var(--ok); color:var(--ok); }
+.warn-banner.editing{ background:var(--ok-tint); border-color:var(--ok); color:var(--ok-text); }
 .warn-banner button{
   background:var(--panel2); border:1px solid var(--border); color:var(--text);
   border-radius:6px; padding:5px 9px; font-size:12px; margin-left:4px; cursor:pointer;
@@ -125,7 +139,7 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
   border-radius:8px; padding:9px 14px; font-size:13px; cursor:pointer;
 }
 .btnrow button.primary{ background:var(--accent); color:#04202b; border-color:var(--accent); font-weight:700; }
-.btnrow button.danger{ color:var(--danger); border-color:#5a2a2a; }
+.btnrow button.danger{ color:var(--danger); border-color:var(--danger-border); }
 .hidden-file{ display:none; }
 .stat-line{ color:var(--muted); font-size:12px; margin-bottom:10px; }
 

@@ -76,10 +76,21 @@ function deleteTodayEntry(index){
    Play sessions — a session is just "everything since the last comment
    line" (a date header or an explicit "// SESSION <iso>" marker). Both
    parsers already skip every line starting with "//" unconditionally,
-   so this marker is fully compatible with the existing data format and
-   with vantage-graph.html without any changes to either.
+   so these markers are fully compatible with the existing data format
+   and with vantage-graph.html without any changes to either.
+
+   Revisiting an already-recorded location amends its canonical line in
+   place (see loadForEdit()/onSave()) rather than duplicating it, so a
+   revisit of a location first logged in an earlier session wouldn't
+   otherwise appear anywhere in *this* session's route. To keep it in
+   the route without duplicating the location's data, onSave() appends a
+   "// VISIT <id> <iso>" marker for that revisit. It's still just a "//"
+   comment line, so it needs no changes to either parser — only to the
+   session-boundary/entry-collection logic below, which treats it as a
+   route stop rather than a session boundary.
    ===================================================================== */
 const SESSION_MARKER_PREFIX = "// SESSION ";
+const VISIT_MARKER_PREFIX = "// VISIT ";
 
 function startNewSession(){
   let out = getText().replace(/\s+$/, "");
@@ -87,27 +98,78 @@ function startNewSession(){
   setText(out);
 }
 
-function getSessionEntries(text = getText()){
+/* Appends a "// VISIT <id> <iso>" marker if `lineIndex` (the canonical
+   line being amended) lies before the current session's start — i.e. the
+   location was first recorded in an earlier session and is only now
+   being revisited. Editing a line that's already part of the current
+   session is a same-session correction, not a new stop, so no marker
+   is added for that case. */
+function logRevisitIfNeeded(id, lineIndex){
+  const text = getText();
+  const sessions = getAllSessions(text);
+  const current = sessions[sessions.length - 1];
+  if (!current || lineIndex > current.startIdx) return;
+  let out = text.replace(/\s+$/, "");
+  out += "\n" + VISIT_MARKER_PREFIX + id + " " + new Date().toISOString() + "\n";
+  setText(out);
+}
+
+/* Splits the whole log into every session (a run bounded by consecutive
+   date-header/"// SESSION" comment lines), each with its ordered list of
+   entries — real location lines plus "// VISIT" revisits. Used both for
+   the live current-session route overlay and for browsing past runs. */
+function getAllSessions(text = getText()){
   const lines = text.split("\n");
-  let startIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--){
-    if (lines[i].trim().startsWith("//")){ startIdx = i; break; }
-  }
-  if (startIdx === -1) return { startedAt: null, entries: [] };
+  const boundaries = [];
+  lines.forEach((raw, i) => {
+    const l = raw.trim();
+    if (l.startsWith("//") && !l.startsWith(VISIT_MARKER_PREFIX)) boundaries.push(i);
+  });
 
-  const markerLine = lines[startIdx].trim();
-  const startedAt = markerLine.startsWith(SESSION_MARKER_PREFIX)
-    ? markerLine.slice(SESSION_MARKER_PREFIX.length)
-    : null;
+  return boundaries.map((startIdx, bi) => {
+    const endIdx = bi + 1 < boundaries.length ? boundaries[bi + 1] : lines.length;
+    const headerLine = lines[startIdx].trim();
+    const startedAt = headerLine.startsWith(SESSION_MARKER_PREFIX)
+      ? headerLine.slice(SESSION_MARKER_PREFIX.length)
+      : null;
+    const label = headerLine.replace(/^\/\/\s*/, "");
 
-  const entries = [];
-  for (let i = startIdx + 1; i < lines.length; i++){
-    const line = lines[i].trim();
-    if (!line || line.startsWith("//")) continue;
-    const id = line.split(/\s+/)[0];
-    if (id) entries.push({ id, line, lineIndex: i });
+    const entries = [];
+    for (let i = startIdx + 1; i < endIdx; i++){
+      const line = lines[i].trim();
+      if (!line) continue;
+      if (line.startsWith(VISIT_MARKER_PREFIX)){
+        const id = line.slice(VISIT_MARKER_PREFIX.length).trim().split(/\s+/)[0];
+        if (id) entries.push({ id, line, lineIndex: i, revisit: true });
+        continue;
+      }
+      if (line.startsWith("//")) continue;
+      const id = line.split(/\s+/)[0];
+      if (id) entries.push({ id, line, lineIndex: i });
+    }
+    return { index: bi, startIdx, endIdx, label, startedAt, entries };
+  });
+}
+
+/* The live, currently-accumulating session (what the Graph tab shows by
+   default). Kept as its own helper since it's the common case. */
+function getSessionEntries(text = getText()){
+  const sessions = getAllSessions(text);
+  if (!sessions.length) return { startedAt: null, entries: [] };
+  return sessions[sessions.length - 1];
+}
+
+/* Human-readable label for a session-picker option: a "// SESSION <iso>"
+   marker gets formatted as a date/time, a plain date header is already
+   readable as-is (e.g. "15th Feb 2026"). */
+function formatSessionLabel(session){
+  if (session.startedAt){
+    const d = new Date(session.startedAt);
+    if (!isNaN(d)){
+      return d.toLocaleString(undefined, { month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" });
+    }
   }
-  return { startedAt, entries };
+  return session.label || "Session";
 }
 
 /* Finds the most recently written line for a given location id, so it can
@@ -311,6 +373,7 @@ function onSave(){
   if (bonuses.length) line += ` B:${bonuses.join(",")}`;
 
   if (editingLineIndex !== null){
+    logRevisitIfNeeded(id, editingLineIndex);
     const lines = getText().split("\n");
     lines[editingLineIndex] = line;
     setText(lines.join("\n"));
@@ -529,6 +592,7 @@ function wireDataTab(){
    refreshed whenever the underlying data changes.
    ===================================================================== */
 let graphApi = {};
+let selectedSessionIndex = null; // null = always follow the live/current session
 
 function renderGraph(text){
   const grid = 120;
@@ -578,11 +642,31 @@ function renderGraph(text){
     });
   });
 
-  // Current play session's route: the ordered sequence of locations added
-  // since the last date header / "New Session" marker, restricted to
+  // Play session route: the ordered sequence of locations added during a
+  // session (a run bounded by date-header / "New Session" markers, plus
+  // "// VISIT" revisits of earlier-session locations), restricted to
   // locations that resolved to a node (so a typo'd target doesn't crash
   // the overlay). Consecutive repeats collapse into a single stop.
-  const session = getSessionEntries(text);
+  // Defaults to the live/current session; the picker below lets you
+  // browse any past run instead.
+  const allSessions = getAllSessions(text);
+  const liveIndex = allSessions.length - 1;
+  if (selectedSessionIndex === null || !allSessions[selectedSessionIndex]) selectedSessionIndex = liveIndex;
+  const session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
+  const viewingPast = selectedSessionIndex !== liveIndex;
+
+  const picker = document.getElementById("g-sessionPicker");
+  if (picker){
+    picker.innerHTML = allSessions.map((s, i) =>
+      `<option value="${i}">${escapeHtml(formatSessionLabel(s))}${i === liveIndex ? " (current)" : ""}</option>`
+    ).join("");
+    picker.value = String(selectedSessionIndex);
+    picker.onchange = () => {
+      selectedSessionIndex = Number(picker.value);
+      renderGraph(getText());
+    };
+  }
+
   const routeStops = [];
   session.entries.forEach(e => {
     if (!nodes[e.id]) return;
@@ -595,8 +679,8 @@ function renderGraph(text){
     routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
   }
   document.getElementById("g-sessionInfo").textContent = routeStops.length
-    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} this session (${sessionIds.size} unique)`
-    : "No stops recorded yet this session.";
+    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
+    : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
 
   document.getElementById("g-editSelected").style.display = "none";
 
@@ -962,6 +1046,7 @@ function wireGraphTab(){
   document.getElementById("g-btnNewSession").onclick = () => {
     if (confirm("Start a new play session? The route overlay will restart from here — earlier locations stay on the map.")){
       startNewSession();
+      selectedSessionIndex = null;
       refreshEverything();
     }
   };

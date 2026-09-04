@@ -92,10 +92,6 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
 .rowlist .rowitem{ display:flex; gap:6px; margin-bottom:6px; align-items:center; }
 .rowlist .rowitem input{ flex:1; min-width:0; }
 .rowlist .rowitem .arrow{ color:var(--muted); }
-.rowlist .rowitem .label-split{ flex:1.4; min-width:0; display:flex; gap:4px; }
-.rowlist .rowitem .label-split select.label-verb{
-  flex:0 0 auto; width:auto; padding:8px 4px; font-size:12px; font-weight:700; border-width:2px;
-}
 .rowlist .rowitem button.rm{
   background:var(--panel2); border:1px solid var(--border); color:var(--danger);
   border-radius:6px; width:32px; height:32px; flex-shrink:0;
@@ -256,9 +252,6 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
       <div id="g-editSelected"></div>
       <div id="g-toolbar">
         <h4 style="margin:0;">Play session</h4>
-        <div class="toolbar-entry">
-          <select id="g-sessionPicker" style="width:100%;"></select>
-        </div>
         <div class="toolbar-entry" id="g-sessionInfo">No stops recorded yet this session.</div>
         <div class="toolbar-entry">
           <label style="display:flex;align-items:center;gap:6px;">

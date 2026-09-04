@@ -12,14 +12,6 @@ const DIRS = ["N","E","S","W"];
 const DIR_NAMES = {N:"North",E:"East",S:"South",W:"West"};
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-/* Action/bonus labels are always "<verb>/<sub-name>" (e.g. "Help/Repair",
-   "Move/Leap"). These are the only valid verbs, and their colors mirror
-   the ones renderGraph() already assigns to action edges by label prefix
-   (see the color switch in renderGraph()), so the Add form's verb picker
-   stays visually in sync with the graph. */
-const ACTION_VERBS = ["Move","Look","Engage","Help","Take","Overpower"];
-const ACTION_VERB_COLORS = { Move:"blue", Look:"purple", Engage:"green", Help:"orange", Take:"yellow", Overpower:"red" };
-
 function getText(){ return localStorage.getItem(STORAGE_KEY) || ""; }
 function setText(text){ localStorage.setItem(STORAGE_KEY, text); }
 
@@ -84,21 +76,10 @@ function deleteTodayEntry(index){
    Play sessions — a session is just "everything since the last comment
    line" (a date header or an explicit "// SESSION <iso>" marker). Both
    parsers already skip every line starting with "//" unconditionally,
-   so these markers are fully compatible with the existing data format
-   and with vantage-graph.html without any changes to either.
-
-   Revisiting an already-recorded location amends its canonical line in
-   place (see loadForEdit()/onSave()) rather than duplicating it, so a
-   revisit of a location first logged in an earlier session wouldn't
-   otherwise appear anywhere in *this* session's route. To keep it in
-   the route without duplicating the location's data, onSave() appends a
-   "// VISIT <id> <iso>" marker for that revisit. It's still just a "//"
-   comment line, so it needs no changes to either parser — only to the
-   session-boundary/entry-collection logic below, which treats it as a
-   route stop rather than a session boundary.
+   so this marker is fully compatible with the existing data format and
+   with vantage-graph.html without any changes to either.
    ===================================================================== */
 const SESSION_MARKER_PREFIX = "// SESSION ";
-const VISIT_MARKER_PREFIX = "// VISIT ";
 
 function startNewSession(){
   let out = getText().replace(/\s+$/, "");
@@ -106,78 +87,27 @@ function startNewSession(){
   setText(out);
 }
 
-/* Appends a "// VISIT <id> <iso>" marker if `lineIndex` (the canonical
-   line being amended) lies before the current session's start — i.e. the
-   location was first recorded in an earlier session and is only now
-   being revisited. Editing a line that's already part of the current
-   session is a same-session correction, not a new stop, so no marker
-   is added for that case. */
-function logRevisitIfNeeded(id, lineIndex){
-  const text = getText();
-  const sessions = getAllSessions(text);
-  const current = sessions[sessions.length - 1];
-  if (!current || lineIndex > current.startIdx) return;
-  let out = text.replace(/\s+$/, "");
-  out += "\n" + VISIT_MARKER_PREFIX + id + " " + new Date().toISOString() + "\n";
-  setText(out);
-}
-
-/* Splits the whole log into every session (a run bounded by consecutive
-   date-header/"// SESSION" comment lines), each with its ordered list of
-   entries — real location lines plus "// VISIT" revisits. Used both for
-   the live current-session route overlay and for browsing past runs. */
-function getAllSessions(text = getText()){
-  const lines = text.split("\n");
-  const boundaries = [];
-  lines.forEach((raw, i) => {
-    const l = raw.trim();
-    if (l.startsWith("//") && !l.startsWith(VISIT_MARKER_PREFIX)) boundaries.push(i);
-  });
-
-  return boundaries.map((startIdx, bi) => {
-    const endIdx = bi + 1 < boundaries.length ? boundaries[bi + 1] : lines.length;
-    const headerLine = lines[startIdx].trim();
-    const startedAt = headerLine.startsWith(SESSION_MARKER_PREFIX)
-      ? headerLine.slice(SESSION_MARKER_PREFIX.length)
-      : null;
-    const label = headerLine.replace(/^\/\/\s*/, "");
-
-    const entries = [];
-    for (let i = startIdx + 1; i < endIdx; i++){
-      const line = lines[i].trim();
-      if (!line) continue;
-      if (line.startsWith(VISIT_MARKER_PREFIX)){
-        const id = line.slice(VISIT_MARKER_PREFIX.length).trim().split(/\s+/)[0];
-        if (id) entries.push({ id, line, lineIndex: i, revisit: true });
-        continue;
-      }
-      if (line.startsWith("//")) continue;
-      const id = line.split(/\s+/)[0];
-      if (id) entries.push({ id, line, lineIndex: i });
-    }
-    return { index: bi, startIdx, endIdx, label, startedAt, entries };
-  });
-}
-
-/* The live, currently-accumulating session (what the Graph tab shows by
-   default). Kept as its own helper since it's the common case. */
 function getSessionEntries(text = getText()){
-  const sessions = getAllSessions(text);
-  if (!sessions.length) return { startedAt: null, entries: [] };
-  return sessions[sessions.length - 1];
-}
-
-/* Human-readable label for a session-picker option: a "// SESSION <iso>"
-   marker gets formatted as a date/time, a plain date header is already
-   readable as-is (e.g. "15th Feb 2026"). */
-function formatSessionLabel(session){
-  if (session.startedAt){
-    const d = new Date(session.startedAt);
-    if (!isNaN(d)){
-      return d.toLocaleString(undefined, { month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" });
-    }
+  const lines = text.split("\n");
+  let startIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--){
+    if (lines[i].trim().startsWith("//")){ startIdx = i; break; }
   }
-  return session.label || "Session";
+  if (startIdx === -1) return { startedAt: null, entries: [] };
+
+  const markerLine = lines[startIdx].trim();
+  const startedAt = markerLine.startsWith(SESSION_MARKER_PREFIX)
+    ? markerLine.slice(SESSION_MARKER_PREFIX.length)
+    : null;
+
+  const entries = [];
+  for (let i = startIdx + 1; i < lines.length; i++){
+    const line = lines[i].trim();
+    if (!line || line.startsWith("//")) continue;
+    const id = line.split(/\s+/)[0];
+    if (id) entries.push({ id, line, lineIndex: i });
+  }
+  return { startedAt, entries };
 }
 
 /* Finds the most recently written line for a given location id, so it can
@@ -256,13 +186,13 @@ function parseAll(text){
       } else if (p.startsWith("A:")){
         p.slice(2).split(",").forEach(a => {
           const [label, target] = a.split("->");
-          if (label) actionLabels.add(labelSubPart(label));
+          if (label) actionLabels.add(label);
           if (target) allIds.add(target);
         });
       } else if (p.startsWith("B:")){
         p.slice(2).split(",").forEach(b => {
           const [label] = b.split("->");
-          if (label) bonusLabels.add(labelSubPart(label));
+          if (label) bonusLabels.add(label);
         });
       } else {
         const [, target] = p.split(":");
@@ -279,57 +209,6 @@ function parseAll(text){
    ===================================================================== */
 const dirState = {};
 let editingLineIndex = null; // non-null while amending a previously-saved line in place
-
-/* Splits a stored "<verb>/<sub-name>" label (action or bonus) into its
-   picker value and free-text remainder, for reloading a saved line back
-   into the split verb-select + sub-text controls. Anything that isn't a
-   recognised "<verb>/..." — including pre-existing free-form labels — is
-   kept intact as the sub-text under the default verb, rather than losing
-   data. */
-function splitActionLabel(label){
-  const raw = (label || "").trim();
-  const slash = raw.indexOf("/");
-  if (slash !== -1){
-    const verbPart = raw.slice(0, slash);
-    const match = ACTION_VERBS.find(v => v.toLowerCase() === verbPart.toLowerCase());
-    if (match) return { verb: match, sub: raw.slice(slash + 1) };
-  }
-  return { verb: ACTION_VERBS[0], sub: raw };
-}
-
-/* Recombines the verb picker + sub-text back into a stored label, per the
-   "always <verb>/<sub-name>, spaces stripped from the sub-name" convention. */
-function joinActionLabel(verb, sub){
-  const cleanSub = (sub || "").replace(/\s+/g, "");
-  return cleanSub ? `${verb}/${cleanSub}` : verb;
-}
-
-/* For autocomplete: only the free-text sub-name is worth suggesting back,
-   not the fixed verb prefix. */
-function labelSubPart(label){
-  const raw = (label || "").trim();
-  const slash = raw.indexOf("/");
-  return slash === -1 ? raw : raw.slice(slash + 1);
-}
-
-/* Bonus outcome/item/lesson text: spaces become "-", except around a "+"
-   (joining two bonuses) where spaces are simply dropped —
-   e.g. "item 101 + skill" -> "item-101+skill". */
-function formatBonusDescription(text){
-  return (text || "").trim().replace(/\s*\+\s*/g, "+").replace(/\s+/g, "-");
-}
-
-function actionVerbOptionsHtml(selected){
-  return ACTION_VERBS.map(v =>
-    `<option value="${v}" style="color:${ACTION_VERB_COLORS[v]};"${v === selected ? " selected" : ""}>${v}</option>`
-  ).join("");
-}
-
-function applyVerbColor(select){
-  const color = ACTION_VERB_COLORS[select.value] || "";
-  select.style.borderColor = color;
-  select.style.color = color;
-}
 
 function setDirUI(d, mode, value){
   const row = document.querySelectorAll("#dirGrid .dirrow")[DIRS.indexOf(d)];
@@ -382,41 +261,27 @@ function getDirToken(d){
 
 function addActionRow(label = "", target = ""){
   const container = document.getElementById("actionRows");
-  const { verb, sub } = splitActionLabel(label);
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <div class="label-split">
-      <select class="label-verb">${actionVerbOptionsHtml(verb)}</select>
-      <input type="text" class="label-sub" list="actionLabelList" placeholder="Repair" autocomplete="off" value="${escapeHtml(sub)}">
-    </div>
+    <input type="text" class="label-input" list="actionLabelList" placeholder="Look/Move" autocomplete="off" value="${escapeHtml(label)}">
     <span class="arrow">&#8594;</span>
     <input type="text" class="target-input" inputmode="numeric" list="idList" placeholder="target ID" autocomplete="off" value="${escapeHtml(target)}">
     <button type="button" class="rm">&times;</button>
   `;
-  const verbSelect = row.querySelector(".label-verb");
-  applyVerbColor(verbSelect);
-  verbSelect.onchange = () => applyVerbColor(verbSelect);
   row.querySelector(".rm").onclick = () => row.remove();
   container.appendChild(row);
 }
 function addBonusRow(label = "", desc = ""){
   const container = document.getElementById("bonusRows");
-  const { verb, sub } = splitActionLabel(label);
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <div class="label-split">
-      <select class="label-verb">${actionVerbOptionsHtml(verb)}</select>
-      <input type="text" class="label-sub" list="bonusLabelList" placeholder="Repair" autocomplete="off" value="${escapeHtml(sub)}">
-    </div>
+    <input type="text" class="label-input" list="bonusLabelList" placeholder="Red/Hunt" autocomplete="off" value="${escapeHtml(label)}">
     <span class="arrow">&#8594;</span>
     <input type="text" class="target-input" placeholder="outcome / item / lesson" autocomplete="off" value="${escapeHtml(desc)}">
     <button type="button" class="rm">&times;</button>
   `;
-  const verbSelect = row.querySelector(".label-verb");
-  applyVerbColor(verbSelect);
-  verbSelect.onchange = () => applyVerbColor(verbSelect);
   row.querySelector(".rm").onclick = () => row.remove();
   container.appendChild(row);
 }
@@ -430,17 +295,15 @@ function onSave(){
 
   const actions = [];
   document.querySelectorAll("#actionRows .rowitem").forEach(row => {
-    const verb = row.querySelector(".label-verb").value;
-    const sub = row.querySelector(".label-sub").value.trim();
+    const label = row.querySelector(".label-input").value.trim();
     const target = row.querySelector(".target-input").value.trim();
-    if (target) actions.push(`${joinActionLabel(verb, sub)}->${target}`);
+    if (label && target) actions.push(`${label}->${target}`);
   });
   const bonuses = [];
   document.querySelectorAll("#bonusRows .rowitem").forEach(row => {
-    const verb = row.querySelector(".label-verb").value;
-    const sub = row.querySelector(".label-sub").value.trim();
-    const desc = formatBonusDescription(row.querySelector(".target-input").value.trim());
-    if (desc) bonuses.push(`${joinActionLabel(verb, sub)}->${desc}`);
+    const label = row.querySelector(".label-input").value.trim();
+    const desc = row.querySelector(".target-input").value.trim();
+    if (label && desc) bonuses.push(`${label}->${desc}`);
   });
 
   let line = `${id} N:${getDirToken("N")} E:${getDirToken("E")} S:${getDirToken("S")} W:${getDirToken("W")} T:${type}`;
@@ -448,7 +311,6 @@ function onSave(){
   if (bonuses.length) line += ` B:${bonuses.join(",")}`;
 
   if (editingLineIndex !== null){
-    logRevisitIfNeeded(id, editingLineIndex);
     const lines = getText().split("\n");
     lines[editingLineIndex] = line;
     setText(lines.join("\n"));
@@ -667,7 +529,6 @@ function wireDataTab(){
    refreshed whenever the underlying data changes.
    ===================================================================== */
 let graphApi = {};
-let selectedSessionIndex = null; // null = always follow the live/current session
 
 function renderGraph(text){
   const grid = 120;
@@ -717,31 +578,11 @@ function renderGraph(text){
     });
   });
 
-  // Play session route: the ordered sequence of locations added during a
-  // session (a run bounded by date-header / "New Session" markers, plus
-  // "// VISIT" revisits of earlier-session locations), restricted to
+  // Current play session's route: the ordered sequence of locations added
+  // since the last date header / "New Session" marker, restricted to
   // locations that resolved to a node (so a typo'd target doesn't crash
   // the overlay). Consecutive repeats collapse into a single stop.
-  // Defaults to the live/current session; the picker below lets you
-  // browse any past run instead.
-  const allSessions = getAllSessions(text);
-  const liveIndex = allSessions.length - 1;
-  if (selectedSessionIndex === null || !allSessions[selectedSessionIndex]) selectedSessionIndex = liveIndex;
-  const session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
-  const viewingPast = selectedSessionIndex !== liveIndex;
-
-  const picker = document.getElementById("g-sessionPicker");
-  if (picker){
-    picker.innerHTML = allSessions.map((s, i) =>
-      `<option value="${i}">${escapeHtml(formatSessionLabel(s))}${i === liveIndex ? " (current)" : ""}</option>`
-    ).join("");
-    picker.value = String(selectedSessionIndex);
-    picker.onchange = () => {
-      selectedSessionIndex = Number(picker.value);
-      renderGraph(getText());
-    };
-  }
-
+  const session = getSessionEntries(text);
   const routeStops = [];
   session.entries.forEach(e => {
     if (!nodes[e.id]) return;
@@ -754,8 +595,8 @@ function renderGraph(text){
     routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
   }
   document.getElementById("g-sessionInfo").textContent = routeStops.length
-    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
-    : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
+    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} this session (${sessionIds.size} unique)`
+    : "No stops recorded yet this session.";
 
   document.getElementById("g-editSelected").style.display = "none";
 
@@ -1121,7 +962,6 @@ function wireGraphTab(){
   document.getElementById("g-btnNewSession").onclick = () => {
     if (confirm("Start a new play session? The route overlay will restart from here — earlier locations stay on the map.")){
       startNewSession();
-      selectedSessionIndex = null;
       refreshEverything();
     }
   };

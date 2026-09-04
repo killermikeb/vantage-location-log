@@ -12,6 +12,14 @@ const DIRS = ["N","E","S","W"];
 const DIR_NAMES = {N:"North",E:"East",S:"South",W:"West"};
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+/* Action/bonus labels are always "<verb>/<sub-name>" (e.g. "Help/Repair",
+   "Move/Leap"). These are the only valid verbs, and their colors mirror
+   the ones renderGraph() already assigns to action edges by label prefix
+   (see the color switch in renderGraph()), so the Add form's verb picker
+   stays visually in sync with the graph. */
+const ACTION_VERBS = ["Move","Look","Engage","Help","Take","Overpower"];
+const ACTION_VERB_COLORS = { Move:"blue", Look:"purple", Engage:"green", Help:"orange", Take:"yellow", Overpower:"red" };
+
 function getText(){ return localStorage.getItem(STORAGE_KEY) || ""; }
 function setText(text){ localStorage.setItem(STORAGE_KEY, text); }
 
@@ -248,13 +256,13 @@ function parseAll(text){
       } else if (p.startsWith("A:")){
         p.slice(2).split(",").forEach(a => {
           const [label, target] = a.split("->");
-          if (label) actionLabels.add(label);
+          if (label) actionLabels.add(labelSubPart(label));
           if (target) allIds.add(target);
         });
       } else if (p.startsWith("B:")){
         p.slice(2).split(",").forEach(b => {
           const [label] = b.split("->");
-          if (label) bonusLabels.add(label);
+          if (label) bonusLabels.add(labelSubPart(label));
         });
       } else {
         const [, target] = p.split(":");
@@ -271,6 +279,57 @@ function parseAll(text){
    ===================================================================== */
 const dirState = {};
 let editingLineIndex = null; // non-null while amending a previously-saved line in place
+
+/* Splits a stored "<verb>/<sub-name>" label (action or bonus) into its
+   picker value and free-text remainder, for reloading a saved line back
+   into the split verb-select + sub-text controls. Anything that isn't a
+   recognised "<verb>/..." — including pre-existing free-form labels — is
+   kept intact as the sub-text under the default verb, rather than losing
+   data. */
+function splitActionLabel(label){
+  const raw = (label || "").trim();
+  const slash = raw.indexOf("/");
+  if (slash !== -1){
+    const verbPart = raw.slice(0, slash);
+    const match = ACTION_VERBS.find(v => v.toLowerCase() === verbPart.toLowerCase());
+    if (match) return { verb: match, sub: raw.slice(slash + 1) };
+  }
+  return { verb: ACTION_VERBS[0], sub: raw };
+}
+
+/* Recombines the verb picker + sub-text back into a stored label, per the
+   "always <verb>/<sub-name>, spaces stripped from the sub-name" convention. */
+function joinActionLabel(verb, sub){
+  const cleanSub = (sub || "").replace(/\s+/g, "");
+  return cleanSub ? `${verb}/${cleanSub}` : verb;
+}
+
+/* For autocomplete: only the free-text sub-name is worth suggesting back,
+   not the fixed verb prefix. */
+function labelSubPart(label){
+  const raw = (label || "").trim();
+  const slash = raw.indexOf("/");
+  return slash === -1 ? raw : raw.slice(slash + 1);
+}
+
+/* Bonus outcome/item/lesson text: spaces become "-", except around a "+"
+   (joining two bonuses) where spaces are simply dropped —
+   e.g. "item 101 + skill" -> "item-101+skill". */
+function formatBonusDescription(text){
+  return (text || "").trim().replace(/\s*\+\s*/g, "+").replace(/\s+/g, "-");
+}
+
+function actionVerbOptionsHtml(selected){
+  return ACTION_VERBS.map(v =>
+    `<option value="${v}" style="color:${ACTION_VERB_COLORS[v]};"${v === selected ? " selected" : ""}>${v}</option>`
+  ).join("");
+}
+
+function applyVerbColor(select){
+  const color = ACTION_VERB_COLORS[select.value] || "";
+  select.style.borderColor = color;
+  select.style.color = color;
+}
 
 function setDirUI(d, mode, value){
   const row = document.querySelectorAll("#dirGrid .dirrow")[DIRS.indexOf(d)];
@@ -323,27 +382,41 @@ function getDirToken(d){
 
 function addActionRow(label = "", target = ""){
   const container = document.getElementById("actionRows");
+  const { verb, sub } = splitActionLabel(label);
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <input type="text" class="label-input" list="actionLabelList" placeholder="Look/Move" autocomplete="off" value="${escapeHtml(label)}">
+    <div class="label-split">
+      <select class="label-verb">${actionVerbOptionsHtml(verb)}</select>
+      <input type="text" class="label-sub" list="actionLabelList" placeholder="Repair" autocomplete="off" value="${escapeHtml(sub)}">
+    </div>
     <span class="arrow">&#8594;</span>
     <input type="text" class="target-input" inputmode="numeric" list="idList" placeholder="target ID" autocomplete="off" value="${escapeHtml(target)}">
     <button type="button" class="rm">&times;</button>
   `;
+  const verbSelect = row.querySelector(".label-verb");
+  applyVerbColor(verbSelect);
+  verbSelect.onchange = () => applyVerbColor(verbSelect);
   row.querySelector(".rm").onclick = () => row.remove();
   container.appendChild(row);
 }
 function addBonusRow(label = "", desc = ""){
   const container = document.getElementById("bonusRows");
+  const { verb, sub } = splitActionLabel(label);
   const row = document.createElement("div");
   row.className = "rowitem";
   row.innerHTML = `
-    <input type="text" class="label-input" list="bonusLabelList" placeholder="Red/Hunt" autocomplete="off" value="${escapeHtml(label)}">
+    <div class="label-split">
+      <select class="label-verb">${actionVerbOptionsHtml(verb)}</select>
+      <input type="text" class="label-sub" list="bonusLabelList" placeholder="Repair" autocomplete="off" value="${escapeHtml(sub)}">
+    </div>
     <span class="arrow">&#8594;</span>
     <input type="text" class="target-input" placeholder="outcome / item / lesson" autocomplete="off" value="${escapeHtml(desc)}">
     <button type="button" class="rm">&times;</button>
   `;
+  const verbSelect = row.querySelector(".label-verb");
+  applyVerbColor(verbSelect);
+  verbSelect.onchange = () => applyVerbColor(verbSelect);
   row.querySelector(".rm").onclick = () => row.remove();
   container.appendChild(row);
 }
@@ -357,15 +430,17 @@ function onSave(){
 
   const actions = [];
   document.querySelectorAll("#actionRows .rowitem").forEach(row => {
-    const label = row.querySelector(".label-input").value.trim();
+    const verb = row.querySelector(".label-verb").value;
+    const sub = row.querySelector(".label-sub").value.trim();
     const target = row.querySelector(".target-input").value.trim();
-    if (label && target) actions.push(`${label}->${target}`);
+    if (target) actions.push(`${joinActionLabel(verb, sub)}->${target}`);
   });
   const bonuses = [];
   document.querySelectorAll("#bonusRows .rowitem").forEach(row => {
-    const label = row.querySelector(".label-input").value.trim();
-    const desc = row.querySelector(".target-input").value.trim();
-    if (label && desc) bonuses.push(`${label}->${desc}`);
+    const verb = row.querySelector(".label-verb").value;
+    const sub = row.querySelector(".label-sub").value.trim();
+    const desc = formatBonusDescription(row.querySelector(".target-input").value.trim());
+    if (desc) bonuses.push(`${joinActionLabel(verb, sub)}->${desc}`);
   });
 
   let line = `${id} N:${getDirToken("N")} E:${getDirToken("E")} S:${getDirToken("S")} W:${getDirToken("W")} T:${type}`;

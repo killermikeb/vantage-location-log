@@ -1,4 +1,6 @@
-const CACHE = "vantage-log-v3";
+// Kept in sync by hand with manifest.webmanifest's "version" and app.js's
+// APP_VERSION — bump on every release so installed PWAs pick up changes.
+const CACHE = "vantage-log-v1.1";
 const ASSETS = [
   "./",
   "./index.html",

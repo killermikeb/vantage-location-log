@@ -6,6 +6,11 @@
    under "// 15th Feb 2026" style date headers. This keeps it directly
    copy/paste compatible with that file.
    ===================================================================== */
+/* Kept in sync by hand with manifest.webmanifest's "version" and sw.js's
+   CACHE string — bump the minor number (1.x) for normal releases, and
+   only the major number for a heavy/breaking change. */
+const APP_VERSION = "1.1";
+
 const STORAGE_KEY = "vantage_location_text";
 const DEFAULT_TYPES = ["Start","Wood","Leaf","Stone","Sand","Cave","Circuit","Energy","Sky","Metal","Sinew","None"];
 const DIRS = ["N","E","S","W"];
@@ -1123,6 +1128,7 @@ function wireGraphTab(){
 function init(){
   ensureDatalists();
   buildDirGrid();
+  document.getElementById("dataVersion").textContent = `v${APP_VERSION}`;
 
   document.getElementById("addActionRow").onclick = () => addActionRow();
   document.getElementById("addBonusRow").onclick = () => addBonusRow();

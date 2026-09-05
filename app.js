@@ -1008,11 +1008,11 @@ function renderGraph(text){
       .data(showRoute ? routeStops : [], d => d.id + "-" + d.order)
       .join(enter => {
         const g = enter.append("g").attr("class","route-stop");
-        g.append("circle").attr("r", 11);
-        g.append("text").attr("text-anchor","middle").attr("dy", 4).text(d => d.order);
+        g.append("circle").attr("r", 20);
+        g.append("text").attr("text-anchor","middle").attr("dy",".35em").text(d => d.order);
         return g;
       })
-      .attr("transform", d => `translate(${nodes[d.id].x + 34},${nodes[d.id].y - 30})`);
+      .attr("transform", d => `translate(${nodes[d.id].x + 44},${nodes[d.id].y - 30})`);
 
     nodeLayer.selectAll(".node")
       .data(allNodes, d => d.id)

@@ -938,6 +938,7 @@ function renderGraph(text){
   const routeLayer = viewport.append("g");
   const nodeLayer = viewport.append("g");
   const specialLayer = viewport.append("g");
+  const routeStopLayer = viewport.append("g"); // above nodes/specials so stop badges never get clipped by a node box
 
   function redraw(){
     const margin = 200;
@@ -1004,7 +1005,7 @@ function renderGraph(text){
       .attr("x1", d => nodes[d.source].x).attr("y1", d => nodes[d.source].y)
       .attr("x2", d => nodes[d.target].x).attr("y2", d => nodes[d.target].y);
 
-    routeLayer.selectAll(".route-stop")
+    routeStopLayer.selectAll(".route-stop")
       .data(showRoute ? routeStops : [], d => d.id + "-" + d.order)
       .join(enter => {
         const g = enter.append("g").attr("class","route-stop");

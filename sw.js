@@ -1,4 +1,4 @@
-const CACHE = "vantage-log-v3";
+const CACHE = "vantage-log-v4";
 const ASSETS = [
   "./",
   "./index.html",

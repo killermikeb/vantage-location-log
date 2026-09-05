@@ -479,11 +479,9 @@ function loadForEdit(id){
 
   document.getElementById("actionRows").innerHTML = "";
   parsed.actions.forEach(a => addActionRow(a.label, a.target));
-  addActionRow();
 
   document.getElementById("bonusRows").innerHTML = "";
   parsed.bonuses.forEach(b => addBonusRow(b.label, b.desc));
-  addBonusRow();
 
   document.getElementById("saveBtn").textContent = "Update Location";
 
@@ -504,8 +502,8 @@ function cancelEdit(){
   banner.className = "warn-banner";
   banner.innerHTML = "";
   buildDirGrid();
-  document.getElementById("actionRows").innerHTML = ""; addActionRow();
-  document.getElementById("bonusRows").innerHTML = ""; addBonusRow();
+  document.getElementById("actionRows").innerHTML = "";
+  document.getElementById("bonusRows").innerHTML = "";
 }
 
 function renderTodayList(){
@@ -757,7 +755,10 @@ function renderGraph(text){
     ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
     : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
 
-  document.getElementById("g-editSelected").style.display = "none";
+  const quickSession = document.getElementById("g-quickSession");
+  if (quickSession){
+    quickSession.textContent = `${formatSessionLabel(session)}${viewingPast ? "" : " (current)"} – ${routeStops.length} stop${routeStops.length===1?"":"s"}`;
+  }
 
   const empty = document.getElementById("g-empty");
   const svgEl = document.getElementById("g-svg");
@@ -836,7 +837,6 @@ function renderGraph(text){
     d3.selectAll("#graphHost .dim").classed("dim", false);
     d3.selectAll("#graphHost .highlight-node").classed("highlight-node", false);
     d3.selectAll("#graphHost .highlight-edge").classed("highlight-edge", false);
-    document.getElementById("g-editSelected").style.display = "none";
   });
 
   let chargeStrength = +document.getElementById("g-chargeSlider").value;
@@ -891,9 +891,6 @@ function renderGraph(text){
     .force("centerX", d3.forceX(centerX).strength(0.03))
     .force("centerY", d3.forceY(centerY).strength(0.03))
     .on("tick", tick);
-
-  let initialFitDone = false;
-  simulation.on("end", () => { if (!initialFitDone){ zoomFitAll(); initialFitDone = true; } });
 
   function tick(){
     componentData.forEach(comp => {
@@ -1017,7 +1014,7 @@ function renderGraph(text){
           })
           .on("mousemove", (event) => { tooltip.style("left",(event.pageX+10)+"px").style("top",(event.pageY+10)+"px"); })
           .on("mouseout", () => tooltip.style("display","none"))
-          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); showEditButton(d.id); });
+          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); });
         g.append("rect").attr("x",-45).attr("y",-22).attr("width",90).attr("height",44);
         g.append("text").attr("text-anchor","middle").attr("dy",".35em").text(d => d.id);
         return g;
@@ -1048,13 +1045,6 @@ function renderGraph(text){
         if (d.dir==="W") dx=-60;
         return `translate(${d.node.x+dx},${d.node.y+dy})`;
       });
-  }
-
-  function showEditButton(nodeId){
-    const btn = document.getElementById("g-editSelected");
-    btn.textContent = `Edit ${nodeId}`;
-    btn.style.display = "flex";
-    btn.onclick = () => loadForEdit(nodeId);
   }
 
   function highlightConnections(nodeId){
@@ -1115,9 +1105,9 @@ function wireGraphTab(){
     const tb = document.getElementById("g-toolbar");
     tb.style.display = tb.style.display === "block" ? "none" : "block";
   };
-  document.getElementById("g-btnFit").onclick = () => graphApi.zoomFitAll && graphApi.zoomFitAll();
+  document.getElementById("g-quickFit").onclick = () => graphApi.zoomFitAll && graphApi.zoomFitAll();
+  document.getElementById("g-quickRefresh").onclick = () => renderGraph(getText());
   document.getElementById("g-btnOverlap").onclick = () => graphApi.detectOverlaps && graphApi.detectOverlaps();
-  document.getElementById("g-btnRefresh").onclick = () => renderGraph(getText());
   document.getElementById("g-btnNewSession").onclick = () => {
     if (confirm("Start a new play session? The route overlay will restart from here — earlier locations stay on the map.")){
       startNewSession();
@@ -1133,8 +1123,6 @@ function wireGraphTab(){
 function init(){
   ensureDatalists();
   buildDirGrid();
-  addActionRow();
-  addBonusRow();
 
   document.getElementById("addActionRow").onclick = () => addActionRow();
   document.getElementById("addBonusRow").onclick = () => addBonusRow();

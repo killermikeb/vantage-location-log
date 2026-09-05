@@ -171,10 +171,10 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
 #graphHost .dim{ opacity:0.15; }
 
 /* Session route overlay */
-#graphHost .session-node rect{ stroke:#e0399b; stroke-width:6; }
+#graphHost .session-node rect{ stroke:#e0399b; stroke-width:4; }
 #graphHost .route-edge{ stroke:#e0399b; stroke-width:3; stroke-dasharray:4 4; opacity:0.85; }
-#graphHost .route-stop circle{ fill:#e0399b; stroke:white; stroke-width:2; }
-#graphHost .route-stop text{ fill:white; font-size:30px; font-weight:700; pointer-events:none; }
+#graphHost .route-stop circle{ fill:#e0399b; stroke:white; stroke-width:1.5; }
+#graphHost .route-stop text{ fill:white; font-size:12px; font-weight:700; pointer-events:none; }
 
 #g-menuToggle{
   position:absolute; bottom:16px; left:16px; background:white; color:#111; width:40px; height:40px;
@@ -200,10 +200,7 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
   border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.3); z-index:20;
   padding:8px 10px; display:flex; align-items:center; gap:8px; font-size:12px; max-width:65vw;
 }
-#g-quickPanel #g-sessionPicker{
-  flex:1 1 auto; min-width:0; max-width:38vw; font-size:12px; font-weight:600;
-  padding:7px 6px; border-radius:6px; border:1px solid #ccc; background:white; color:#111;
-}
+#g-quickPanel #g-quickSession{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #g-quickPanel .quick-actions{ display:flex; gap:6px; flex-shrink:0; }
 #g-quickPanel button{
   background:#eee; border:1px solid #ccc; border-radius:6px; width:34px; height:34px;
@@ -269,7 +266,7 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
       <div class="g-tooltip" id="g-tooltip"></div>
       <div id="g-menuToggle">&#9776;</div>
       <div id="g-quickPanel">
-        <select id="g-sessionPicker"></select>
+        <div id="g-quickSession">No stops yet</div>
         <div class="quick-actions">
           <button type="button" id="g-quickFit" title="Zoom fit" aria-label="Zoom fit">&#9974;</button>
           <button type="button" id="g-quickRefresh" title="Refresh" aria-label="Refresh">&#8635;</button>
@@ -277,6 +274,9 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
       </div>
       <div id="g-toolbar">
         <h4 style="margin:0;">Play session</h4>
+        <div class="toolbar-entry">
+          <select id="g-sessionPicker" style="width:100%;"></select>
+        </div>
         <div class="toolbar-entry" id="g-sessionInfo">No stops recorded yet this session.</div>
         <div class="toolbar-entry">
           <label style="display:flex;align-items:center;gap:6px;">

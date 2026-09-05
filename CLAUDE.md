@@ -42,11 +42,12 @@ This requires the repo's Settings → Pages source to be "Deploy from a branch" 
 - **UI structure**: three tabs (Add / Graph / Data) toggled via `.view.active`, wired in `init()` in [app.js](app.js). Any new tab/view should follow this same pattern (a `#view-<name>` section, a tabbar button with `data-view`, and a branch in `switchView()`).
 - **Styling**: no CSS framework; dark theme via CSS custom properties on `:root` in [index.html](index.html) (`--bg`, `--panel`, `--accent`, etc.). Reuse these tokens rather than hardcoding colors.
 - **PWA/offline**: [sw.js](sw.js) cache-first serves everything in `ASSETS`. Any new static asset referenced by `index.html` must be added to that array and the `CACHE` version string bumped, or offline installs will keep serving stale files.
+- **Versioning**: `APP_VERSION` in [app.js](app.js) (shown next to the Data tab header) is kept in sync by hand with `manifest.webmanifest`'s `version` field and `sw.js`'s `CACHE` string — all three should read the same `1.x` value. Bump the minor number for a normal release; reserve the major number for a heavy/breaking change. `sw.js`'s `CACHE` also still needs bumping (as above) on any release that changes a cached asset, even one that doesn't touch `APP_VERSION`.
 - **Data persistence is planned but not built**: `localStorage` is currently the only copy of a user's location data (the Data tab's Copy/Download/Import buttons are the manual workaround). There's a future intent to add a synced or saved backup file — if asked to build this, don't assume a specific mechanism (cloud sync API, file system access, git-committed file, etc.) without checking first, since none has been chosen yet.
 
 ## Known Pitfalls / Recurring Errors
 
-_None recorded yet — this section should be updated as mistakes surface on this codebase._
+- **PWA app version vs. cache version drifting apart**: Android/Chrome shows whatever `manifest.webmanifest`'s `version` field says (defaulting to a bare "Version 1" if it's missing entirely, which is how this went unnoticed at first). That field, `app.js`'s `APP_VERSION`, and `sw.js`'s `CACHE` string are three separate hand-maintained values with no build step to keep them honest — see the Versioning convention above. Bumping only one (e.g. bumping `CACHE` to bust the offline cache but forgetting `APP_VERSION`/`manifest.webmanifest`, or vice versa) leaves the visible app version and the actually-served cache out of sync. Always bump all three together.
 
 ## Docs Index
 

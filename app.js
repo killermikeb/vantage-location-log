@@ -730,8 +730,32 @@ function renderGraph(text){
   const allSessions = getAllSessions(text);
   const liveIndex = allSessions.length - 1;
   if (selectedSessionIndex === null || !allSessions[selectedSessionIndex]) selectedSessionIndex = liveIndex;
-  const session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
-  const viewingPast = selectedSessionIndex !== liveIndex;
+
+  // Recomputed whenever the session picker changes — kept separate from the
+  // rest of renderGraph so switching sessions just redraws the route overlay
+  // in place instead of rebuilding the whole graph (which was restarting the
+  // force layout and resetting the zoom every time).
+  let session, viewingPast, routeStops, sessionIds, routeSegments;
+  function computeSessionOverlay(){
+    session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
+    viewingPast = selectedSessionIndex !== liveIndex;
+
+    routeStops = [];
+    session.entries.forEach(e => {
+      if (!nodes[e.id]) return;
+      if (routeStops.length && routeStops[routeStops.length - 1].id === e.id) return;
+      routeStops.push({ id: e.id, order: routeStops.length + 1 });
+    });
+    sessionIds = new Set(routeStops.map(s => s.id));
+    routeSegments = [];
+    for (let i = 1; i < routeStops.length; i++){
+      routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
+    }
+    document.getElementById("g-sessionInfo").textContent = routeStops.length
+      ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
+      : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
+  }
+  computeSessionOverlay();
 
   const picker = document.getElementById("g-sessionPicker");
   if (picker){
@@ -741,28 +765,9 @@ function renderGraph(text){
     picker.value = String(selectedSessionIndex);
     picker.onchange = () => {
       selectedSessionIndex = Number(picker.value);
-      renderGraph(getText());
+      computeSessionOverlay();
+      redraw();
     };
-  }
-
-  const routeStops = [];
-  session.entries.forEach(e => {
-    if (!nodes[e.id]) return;
-    if (routeStops.length && routeStops[routeStops.length - 1].id === e.id) return;
-    routeStops.push({ id: e.id, order: routeStops.length + 1 });
-  });
-  const sessionIds = new Set(routeStops.map(s => s.id));
-  const routeSegments = [];
-  for (let i = 1; i < routeStops.length; i++){
-    routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
-  }
-  document.getElementById("g-sessionInfo").textContent = routeStops.length
-    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
-    : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
-
-  const quickSession = document.getElementById("g-quickSession");
-  if (quickSession){
-    quickSession.textContent = `${formatSessionLabel(session)}${viewingPast ? "" : " (current)"} – ${routeStops.length} stop${routeStops.length===1?"":"s"}`;
   }
 
   const empty = document.getElementById("g-empty");

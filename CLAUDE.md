@@ -47,7 +47,7 @@ This requires the repo's Settings → Pages source to be "Deploy from a branch" 
 
 ## Known Pitfalls / Recurring Errors
 
-_None recorded yet — this section should be updated as mistakes surface on this codebase._
+- **PWA app version vs. cache version drifting apart**: Android/Chrome shows whatever `manifest.webmanifest`'s `version` field says (defaulting to a bare "Version 1" if it's missing entirely, which is how this went unnoticed at first). That field, `app.js`'s `APP_VERSION`, and `sw.js`'s `CACHE` string are three separate hand-maintained values with no build step to keep them honest — see the Versioning convention above. Bumping only one (e.g. bumping `CACHE` to bust the offline cache but forgetting `APP_VERSION`/`manifest.webmanifest`, or vice versa) leaves the visible app version and the actually-served cache out of sync. Always bump all three together.
 
 ## Docs Index
 

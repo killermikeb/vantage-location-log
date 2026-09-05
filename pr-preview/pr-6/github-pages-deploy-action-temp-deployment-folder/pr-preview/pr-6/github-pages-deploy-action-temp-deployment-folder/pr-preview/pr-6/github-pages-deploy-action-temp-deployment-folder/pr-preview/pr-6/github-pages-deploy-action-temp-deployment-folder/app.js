@@ -6,11 +6,6 @@
    under "// 15th Feb 2026" style date headers. This keeps it directly
    copy/paste compatible with that file.
    ===================================================================== */
-/* Kept in sync by hand with manifest.webmanifest's "version" and sw.js's
-   CACHE string — bump the minor number (1.x) for normal releases, and
-   only the major number for a heavy/breaking change. */
-const APP_VERSION = "1.1";
-
 const STORAGE_KEY = "vantage_location_text";
 const DEFAULT_TYPES = ["Start","Wood","Leaf","Stone","Sand","Cave","Circuit","Energy","Sky","Metal","Sinew","None"];
 const DIRS = ["N","E","S","W"];
@@ -484,9 +479,11 @@ function loadForEdit(id){
 
   document.getElementById("actionRows").innerHTML = "";
   parsed.actions.forEach(a => addActionRow(a.label, a.target));
+  addActionRow();
 
   document.getElementById("bonusRows").innerHTML = "";
   parsed.bonuses.forEach(b => addBonusRow(b.label, b.desc));
+  addBonusRow();
 
   document.getElementById("saveBtn").textContent = "Update Location";
 
@@ -507,8 +504,8 @@ function cancelEdit(){
   banner.className = "warn-banner";
   banner.innerHTML = "";
   buildDirGrid();
-  document.getElementById("actionRows").innerHTML = "";
-  document.getElementById("bonusRows").innerHTML = "";
+  document.getElementById("actionRows").innerHTML = ""; addActionRow();
+  document.getElementById("bonusRows").innerHTML = ""; addBonusRow();
 }
 
 function renderTodayList(){
@@ -730,32 +727,8 @@ function renderGraph(text){
   const allSessions = getAllSessions(text);
   const liveIndex = allSessions.length - 1;
   if (selectedSessionIndex === null || !allSessions[selectedSessionIndex]) selectedSessionIndex = liveIndex;
-
-  // Recomputed whenever the session picker changes — kept separate from the
-  // rest of renderGraph so switching sessions just redraws the route overlay
-  // in place instead of rebuilding the whole graph (which was restarting the
-  // force layout and resetting the zoom every time).
-  let session, viewingPast, routeStops, sessionIds, routeSegments;
-  function computeSessionOverlay(){
-    session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
-    viewingPast = selectedSessionIndex !== liveIndex;
-
-    routeStops = [];
-    session.entries.forEach(e => {
-      if (!nodes[e.id]) return;
-      if (routeStops.length && routeStops[routeStops.length - 1].id === e.id) return;
-      routeStops.push({ id: e.id, order: routeStops.length + 1 });
-    });
-    sessionIds = new Set(routeStops.map(s => s.id));
-    routeSegments = [];
-    for (let i = 1; i < routeStops.length; i++){
-      routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
-    }
-    document.getElementById("g-sessionInfo").textContent = routeStops.length
-      ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
-      : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
-  }
-  computeSessionOverlay();
+  const session = allSessions[selectedSessionIndex] || { startedAt: null, entries: [] };
+  const viewingPast = selectedSessionIndex !== liveIndex;
 
   const picker = document.getElementById("g-sessionPicker");
   if (picker){
@@ -765,10 +738,26 @@ function renderGraph(text){
     picker.value = String(selectedSessionIndex);
     picker.onchange = () => {
       selectedSessionIndex = Number(picker.value);
-      computeSessionOverlay();
-      redraw();
+      renderGraph(getText());
     };
   }
+
+  const routeStops = [];
+  session.entries.forEach(e => {
+    if (!nodes[e.id]) return;
+    if (routeStops.length && routeStops[routeStops.length - 1].id === e.id) return;
+    routeStops.push({ id: e.id, order: routeStops.length + 1 });
+  });
+  const sessionIds = new Set(routeStops.map(s => s.id));
+  const routeSegments = [];
+  for (let i = 1; i < routeStops.length; i++){
+    routeSegments.push({ source: routeStops[i-1].id, target: routeStops[i].id });
+  }
+  document.getElementById("g-sessionInfo").textContent = routeStops.length
+    ? `${session.entries.length} stop${session.entries.length===1?"":"s"} (${sessionIds.size} unique)${viewingPast ? "" : " this session"}`
+    : (viewingPast ? "No stops recorded in this session." : "No stops recorded yet this session.");
+
+  document.getElementById("g-editSelected").style.display = "none";
 
   const empty = document.getElementById("g-empty");
   const svgEl = document.getElementById("g-svg");
@@ -847,6 +836,7 @@ function renderGraph(text){
     d3.selectAll("#graphHost .dim").classed("dim", false);
     d3.selectAll("#graphHost .highlight-node").classed("highlight-node", false);
     d3.selectAll("#graphHost .highlight-edge").classed("highlight-edge", false);
+    document.getElementById("g-editSelected").style.display = "none";
   });
 
   let chargeStrength = +document.getElementById("g-chargeSlider").value;
@@ -901,6 +891,9 @@ function renderGraph(text){
     .force("centerX", d3.forceX(centerX).strength(0.03))
     .force("centerY", d3.forceY(centerY).strength(0.03))
     .on("tick", tick);
+
+  let initialFitDone = false;
+  simulation.on("end", () => { if (!initialFitDone){ zoomFitAll(); initialFitDone = true; } });
 
   function tick(){
     componentData.forEach(comp => {
@@ -1008,11 +1001,11 @@ function renderGraph(text){
       .data(showRoute ? routeStops : [], d => d.id + "-" + d.order)
       .join(enter => {
         const g = enter.append("g").attr("class","route-stop");
-        g.append("circle").attr("r", 20);
-        g.append("text").attr("text-anchor","middle").attr("dy",".35em").text(d => d.order);
+        g.append("circle").attr("r", 11);
+        g.append("text").attr("text-anchor","middle").attr("dy", 4).text(d => d.order);
         return g;
       })
-      .attr("transform", d => `translate(${nodes[d.id].x + 44},${nodes[d.id].y - 30})`);
+      .attr("transform", d => `translate(${nodes[d.id].x + 34},${nodes[d.id].y - 30})`);
 
     nodeLayer.selectAll(".node")
       .data(allNodes, d => d.id)
@@ -1024,7 +1017,7 @@ function renderGraph(text){
           })
           .on("mousemove", (event) => { tooltip.style("left",(event.pageX+10)+"px").style("top",(event.pageY+10)+"px"); })
           .on("mouseout", () => tooltip.style("display","none"))
-          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); });
+          .on("click", (event, d) => { event.stopPropagation(); highlightConnections(d.id); showEditButton(d.id); });
         g.append("rect").attr("x",-45).attr("y",-22).attr("width",90).attr("height",44);
         g.append("text").attr("text-anchor","middle").attr("dy",".35em").text(d => d.id);
         return g;
@@ -1055,6 +1048,13 @@ function renderGraph(text){
         if (d.dir==="W") dx=-60;
         return `translate(${d.node.x+dx},${d.node.y+dy})`;
       });
+  }
+
+  function showEditButton(nodeId){
+    const btn = document.getElementById("g-editSelected");
+    btn.textContent = `Edit ${nodeId}`;
+    btn.style.display = "flex";
+    btn.onclick = () => loadForEdit(nodeId);
   }
 
   function highlightConnections(nodeId){
@@ -1115,9 +1115,9 @@ function wireGraphTab(){
     const tb = document.getElementById("g-toolbar");
     tb.style.display = tb.style.display === "block" ? "none" : "block";
   };
-  document.getElementById("g-quickFit").onclick = () => graphApi.zoomFitAll && graphApi.zoomFitAll();
-  document.getElementById("g-quickRefresh").onclick = () => renderGraph(getText());
+  document.getElementById("g-btnFit").onclick = () => graphApi.zoomFitAll && graphApi.zoomFitAll();
   document.getElementById("g-btnOverlap").onclick = () => graphApi.detectOverlaps && graphApi.detectOverlaps();
+  document.getElementById("g-btnRefresh").onclick = () => renderGraph(getText());
   document.getElementById("g-btnNewSession").onclick = () => {
     if (confirm("Start a new play session? The route overlay will restart from here — earlier locations stay on the map.")){
       startNewSession();
@@ -1133,7 +1133,8 @@ function wireGraphTab(){
 function init(){
   ensureDatalists();
   buildDirGrid();
-  document.getElementById("dataVersion").textContent = `v${APP_VERSION}`;
+  addActionRow();
+  addBonusRow();
 
   document.getElementById("addActionRow").onclick = () => addActionRow();
   document.getElementById("addBonusRow").onclick = () => addBonusRow();

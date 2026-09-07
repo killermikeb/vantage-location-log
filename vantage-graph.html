@@ -278,18 +278,45 @@ input.trim().split("\n").forEach(line => {
 // =====================
 // GROUPING
 // =====================
+// Position + group nodes in a single traversal per connected component, so
+// each node's (x,y) is set exactly once, from the first spanning-tree edge
+// that reaches it. Previously this was a flat forEach over every compass
+// edge in file order, which re-set a node's position every time a later
+// edge touched it ("last write wins") — a location whose own row was the
+// first line in the file to mention its id (rather than being discovered
+// as an already-plotted neighbor's N/E/S/W target) would default to the
+// same (0,0) origin as a fresh component, then push its real neighbors to
+// that bogus origin's coordinates, stacking unrelated locations on top of
+// each other.
+const oppositeDir = { N:"S", S:"N", E:"W", W:"E" };
+function placeRelative(node, from, dir){
+    if(dir==="N"){ node.x=from.x; node.y=from.y-grid; }
+    if(dir==="S"){ node.x=from.x; node.y=from.y+grid; }
+    if(dir==="E"){ node.x=from.x+grid; node.y=from.y; }
+    if(dir==="W"){ node.x=from.x-grid; node.y=from.y; }
+}
 const visited = new Set();
+const positioned = new Set();
 let gid=0;
 function dfs(start){
     const stack = [start];
+    positioned.add(start);
     while(stack.length){
         const id = stack.pop();
         if(visited.has(id)) continue;
         visited.add(id);
         nodes[id].group = gid;
         compassEdges.forEach(e=>{
-            if(e.source===id && !visited.has(e.target)) stack.push(e.target);
-            if(e.target===id && !visited.has(e.source)) stack.push(e.source);
+            if(e.source===id && !positioned.has(e.target)){
+                positioned.add(e.target);
+                placeRelative(nodes[e.target], nodes[id], e.dir);
+                stack.push(e.target);
+            }
+            if(e.target===id && !positioned.has(e.source)){
+                positioned.add(e.source);
+                placeRelative(nodes[e.source], nodes[id], oppositeDir[e.dir]);
+                stack.push(e.source);
+            }
         });
     }
 }
@@ -302,15 +329,6 @@ const components = {};
 Object.values(nodes).forEach(n=>{
     if(!components[n.group]) components[n.group]=[];
     components[n.group].push(n);
-});
-
-compassEdges.forEach(e=>{
-    const s = nodes[e.source];
-    const t = nodes[e.target];
-    if(e.dir==="N"){ t.x=s.x; t.y=s.y-grid; }
-    if(e.dir==="S"){ t.x=s.x; t.y=s.y+grid; }
-    if(e.dir==="E"){ t.y=s.y; t.x=s.x+grid; }
-    if(e.dir==="W"){ t.y=s.y; t.x=s.x-grid; }
 });
 
 // Just enough initial spread so components don't all start exactly on top of

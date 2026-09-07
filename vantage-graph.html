@@ -236,6 +236,8 @@ input.trim().split("\n").forEach(line => {
     parts.slice(1).forEach(p => {
         if(p.startsWith("T:")){
 			// TODO - add other location type, and some visual indicator.
+        } else if(p.startsWith("R:")){
+			// Region (A-P / S / U) - not visualised here, mirrors app.js's app tab.
         } else if(p.startsWith("B:")){
 			// TODO - add other actions that do not lead to a location.
         } else if(p.startsWith("A:")){

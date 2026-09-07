@@ -160,6 +160,8 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
 #graphHost .component-box{ fill:none; stroke:#666; stroke-width:3; stroke-dasharray:18 10; }
 #graphHost .drag-handle{ fill:#333; cursor:move; }
 #graphHost .board-box{ fill:none; stroke:#333; stroke-width:6; }
+#graphHost .region-cell{ fill:rgba(78,169,255,0.06); stroke:#4ea9ff; stroke-width:3; stroke-dasharray:14 8; }
+#graphHost .region-label{ fill:#4ea9ff; font-size:40px; font-weight:700; opacity:0.6; }
 #graphHost .g-tooltip{
   position:fixed; background:white; color:#111; padding:8px; border-radius:6px;
   box-shadow:0 2px 8px rgba(0,0,0,0.25); font-size:14px; pointer-events:none; display:none; z-index:50;
@@ -242,6 +244,31 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
     </div>
 
     <div class="field">
+      <label for="regionInput">Region</label>
+      <select id="regionInput">
+        <option value="">— none —</option>
+        <option value="S">Sky (S)</option>
+        <option value="U">Underground (U)</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+        <option value="D">D</option>
+        <option value="E">E</option>
+        <option value="F">F</option>
+        <option value="G">G</option>
+        <option value="H">H</option>
+        <option value="I">I</option>
+        <option value="J">J</option>
+        <option value="K">K</option>
+        <option value="L">L</option>
+        <option value="M">M</option>
+        <option value="N">N</option>
+        <option value="O">O</option>
+        <option value="P">P</option>
+      </select>
+    </div>
+
+    <div class="field">
       <label>Actions (A: — leads to another location)</label>
       <div class="rowlist" id="actionRows"></div>
       <button type="button" class="addrow-btn" id="addActionRow">+ Add action</button>
@@ -284,6 +311,12 @@ input:focus,select:focus,textarea:focus{ outline:2px solid var(--accent); }
           </label>
         </div>
         <button type="button" id="g-btnNewSession">New Session</button>
+        <h4 style="margin:16px 0 0;">Regions</h4>
+        <div class="toolbar-entry">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="g-regionToggle"> Group by region
+          </label>
+        </div>
         <h4 style="margin:16px 0 0;">Overlaps</h4>
         <div id="g-overlapOutput">No overlaps detected</div>
         <button type="button" id="g-btnOverlap">Show Overlaps</button>

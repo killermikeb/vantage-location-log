@@ -9,13 +9,19 @@
 /* Kept in sync by hand with manifest.webmanifest's "version" and sw.js's
    CACHE string — bump the minor number (1.x) for normal releases, and
    only the major number for a heavy/breaking change. */
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 const STORAGE_KEY = "vantage_location_text";
 const DEFAULT_TYPES = ["Start","Wood","Leaf","Stone","Sand","Cave","Circuit","Energy","Sky","Metal","Sinew","None"];
 const DIRS = ["N","E","S","W"];
 const DIR_NAMES = {N:"North",E:"East",S:"South",W:"West"};
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/* Region letters form a 4x4 grid (A-D / E-H / I-L / M-P, row by row), plus
+   "S" (Sky) and "U" (Underground) which sit above/below that grid rather
+   than in it. See REGION_GRID_LETTERS / regionGridCell() in the graph
+   renderer for how a region maps to a position. */
+const REGION_GRID_LETTERS = "ABCDEFGHIJKLMNOP".split("");
 
 /* Action/bonus labels are always "<verb>/<sub-name>" (e.g. "Help/Repair",
    "Move/Leap"). These are the only valid verbs, and their colors mirror
@@ -204,12 +210,15 @@ function parseLocationLine(line){
   const dirs = { N: "unknown", E: "unknown", S: "unknown", W: "unknown" };
   const dirValues = { N: "", E: "", S: "", W: "" };
   let type = "None";
+  let region = "";
   const actions = [];
   const bonuses = [];
 
   parts.slice(1).forEach(p => {
     if (p.startsWith("T:")){
       type = p.slice(2) || "None";
+    } else if (p.startsWith("R:")){
+      region = p.slice(2) || "";
     } else if (p.startsWith("A:")){
       p.slice(2).split(",").forEach(a => {
         const [label, target] = a.split("->");
@@ -230,7 +239,7 @@ function parseLocationLine(line){
     }
   });
 
-  return { id, dirs, dirValues, type, actions, bonuses };
+  return { id, dirs, dirValues, type, region, actions, bonuses };
 }
 
 /* =====================================================================
@@ -241,6 +250,7 @@ function parseAll(text){
   const definedIds = new Set();
   const allIds = new Set();
   const types = new Set(DEFAULT_TYPES);
+  const regions = new Set();
   const actionLabels = new Set();
   const bonusLabels = new Set();
   let locationCount = 0;
@@ -258,6 +268,9 @@ function parseAll(text){
       if (p.startsWith("T:")){
         const t = p.slice(2);
         if (t) types.add(t);
+      } else if (p.startsWith("R:")){
+        const r = p.slice(2);
+        if (r) regions.add(r);
       } else if (p.startsWith("A:")){
         p.slice(2).split(",").forEach(a => {
           const [label, target] = a.split("->");
@@ -276,7 +289,7 @@ function parseAll(text){
     });
   });
 
-  return { definedIds, allIds, types, actionLabels, bonusLabels, locationCount };
+  return { definedIds, allIds, types, regions, actionLabels, bonusLabels, locationCount };
 }
 
 /* =====================================================================
@@ -432,6 +445,7 @@ function onSave(){
   if (!id){ idInput.focus(); return; }
 
   const type = document.getElementById("typeInput").value.trim() || "None";
+  const region = document.getElementById("regionInput").value.trim();
 
   const actions = [];
   document.querySelectorAll("#actionRows .rowitem").forEach(row => {
@@ -449,6 +463,7 @@ function onSave(){
   });
 
   let line = `${id} N:${getDirToken("N")} E:${getDirToken("E")} S:${getDirToken("S")} W:${getDirToken("W")} T:${type}`;
+  if (region) line += ` R:${region}`;
   if (actions.length) line += ` A:${actions.join(",")}`;
   if (bonuses.length) line += ` B:${bonuses.join(",")}`;
 
@@ -481,6 +496,7 @@ function loadForEdit(id){
   document.getElementById("idInput").value = parsed.id;
   DIRS.forEach(d => setDirUI(d, parsed.dirs[d], parsed.dirValues[d]));
   document.getElementById("typeInput").value = parsed.type;
+  document.getElementById("regionInput").value = parsed.region;
 
   document.getElementById("actionRows").innerHTML = "";
   parsed.actions.forEach(a => addActionRow(a.label, a.target));
@@ -682,11 +698,14 @@ function renderGraph(text){
     const parts = line.trim().split(/\s+/);
     const id = parts[0];
     if (!id || id.startsWith("/")) return;
-    if (!nodes[id]) nodes[id] = { id, x:0, y:0, group:null, actions:[], specials:{} };
+    if (!nodes[id]) nodes[id] = { id, x:0, y:0, group:null, actions:[], specials:{}, region:null };
 
     parts.slice(1).forEach(p => {
       if (p.startsWith("T:")){
         // location type — not yet visualised, mirrors vantage-graph.html
+      } else if (p.startsWith("R:")){
+        const r = p.slice(2).trim().toUpperCase();
+        if (r) nodes[id].region = r;
       } else if (p.startsWith("B:")){
         // informational only, mirrors vantage-graph.html
       } else if (p.startsWith("A:")){
@@ -694,7 +713,7 @@ function renderGraph(text){
         acts.forEach(a => {
           const [label, target] = a.split("->");
           if (!target) return;
-          if (!nodes[target]) nodes[target] = { id:target, x:0, y:0, group:null, actions:[], specials:{} };
+          if (!nodes[target]) nodes[target] = { id:target, x:0, y:0, group:null, actions:[], specials:{}, region:null };
           let color = "#888";
           switch ((label||"").toLowerCase().substring(0,3)){
             case "blu": case "mov": color = "blue"; break;
@@ -713,7 +732,7 @@ function renderGraph(text){
         if (target === "***") nodes[id].specials[dir] = "red";
         else if (target === "---") nodes[id].specials[dir] = "yellow";
         else if (target){
-          if (!nodes[target]) nodes[target] = { id:target, x:0, y:0, group:null, actions:[], specials:{} };
+          if (!nodes[target]) nodes[target] = { id:target, x:0, y:0, group:null, actions:[], specials:{}, region:null };
           compassEdges.push({ source:id, target, dir });
         }
       }
@@ -828,6 +847,17 @@ function renderGraph(text){
     let maxDist = 0;
     comp.nodes.forEach(n => { const dist = Math.hypot(n.x-cx, n.y-cy); if (dist > maxDist) maxDist = dist; });
     comp.radius = maxDist + 55;
+
+    // A component's region is whichever region its member nodes most often
+    // carry (an "R:" token) — mixed/unregioned components fall back to null
+    // and just stay near the overall graph center when region layout is on.
+    const regionCounts = {};
+    comp.nodes.forEach(n => { if (n.region) regionCounts[n.region] = (regionCounts[n.region] || 0) + 1; });
+    let bestRegion = null, bestCount = 0;
+    Object.entries(regionCounts).forEach(([r, count]) => {
+      if (count > bestCount){ bestRegion = r; bestCount = count; }
+    });
+    comp.region = bestRegion;
   });
 
   const allNodes = Object.values(nodes);
@@ -932,6 +962,7 @@ function renderGraph(text){
   };
 
   const boardBoxSel = viewport.append("rect").attr("class","board-box");
+  const regionLayer = viewport.append("g"); // behind everything — background reference grid
   const componentLayer = viewport.append("g");
   const edgeLayer = viewport.append("g");
   const actionLayer = viewport.append("g");
@@ -939,6 +970,65 @@ function renderGraph(text){
   const nodeLayer = viewport.append("g");
   const specialLayer = viewport.append("g");
   const routeStopLayer = viewport.append("g"); // above nodes/specials so stop badges never get clipped by a node box
+
+  /* Region layout — an optional overlay that, instead of letting the force
+     simulation settle components wherever, pulls each component toward a
+     fixed slot for its region: Sky ("S") at the top, Underground ("U") at
+     the bottom, and A-P as a 4x4 grid (A-D / E-H / I-L / M-P, row by row)
+     in between. Components with no region (or a mix of regions) fall back
+     to the ordinary graph center, same as when the toggle is off. */
+  const REGION_CELL = 900;
+  function regionGridCell(region){
+    if (!region) return null;
+    if (region === "S") return { x: centerX, y: centerY - 2.5 * REGION_CELL, wide: true, label: "Sky" };
+    if (region === "U") return { x: centerX, y: centerY + 2.5 * REGION_CELL, wide: true, label: "Underground" };
+    const idx = REGION_GRID_LETTERS.indexOf(region);
+    if (idx === -1) return null;
+    const col = idx % 4, row = Math.floor(idx / 4);
+    return { x: centerX + (col - 1.5) * REGION_CELL, y: centerY + (row - 1.5) * REGION_CELL, wide: false, label: region };
+  }
+
+  let groupByRegion = document.getElementById("g-regionToggle").checked;
+  function applyRegionForces(){
+    if (groupByRegion){
+      simulation.force("regionX", d3.forceX(comp => (regionGridCell(comp.region) || { x: centerX }).x)
+        .strength(comp => regionGridCell(comp.region) ? 0.3 : 0.02));
+      simulation.force("regionY", d3.forceY(comp => (regionGridCell(comp.region) || { y: centerY }).y)
+        .strength(comp => regionGridCell(comp.region) ? 0.3 : 0.02));
+    } else {
+      simulation.force("regionX", null);
+      simulation.force("regionY", null);
+    }
+  }
+  function drawRegionOverlay(){
+    const cells = groupByRegion
+      ? REGION_GRID_LETTERS.map(regionGridCell).concat([regionGridCell("S"), regionGridCell("U")])
+      : [];
+    regionLayer.selectAll(".region-cell")
+      .data(cells, d => d.label)
+      .join("rect")
+      .attr("class","region-cell")
+      .attr("x", d => d.x - (d.wide ? 2 * REGION_CELL : REGION_CELL / 2))
+      .attr("y", d => d.y - REGION_CELL / 2)
+      .attr("width", d => d.wide ? 4 * REGION_CELL : REGION_CELL)
+      .attr("height", REGION_CELL);
+    regionLayer.selectAll(".region-label")
+      .data(cells, d => d.label)
+      .join("text")
+      .attr("class","region-label")
+      .attr("x", d => d.x)
+      .attr("y", d => d.y - REGION_CELL / 2 + 50)
+      .attr("text-anchor","middle")
+      .text(d => d.label);
+  }
+  applyRegionForces();
+  drawRegionOverlay();
+  document.getElementById("g-regionToggle").onchange = function(){
+    groupByRegion = this.checked;
+    applyRegionForces();
+    drawRegionOverlay();
+    simulation.alpha(1).restart();
+  };
 
   function redraw(){
     const margin = 200;
@@ -1021,7 +1111,7 @@ function renderGraph(text){
         const g = enter.append("g").attr("class","node")
           .on("mouseover", (event, d) => {
             tooltip.style("display","block")
-              .html(`<b>ID:</b> ${d.id}<br><b>Group:</b> ${d.group}<br><b>Actions:</b><br>${d.actions.join("<br>")||"None"}`);
+              .html(`<b>ID:</b> ${d.id}<br><b>Region:</b> ${d.region || "—"}<br><b>Group:</b> ${d.group}<br><b>Actions:</b><br>${d.actions.join("<br>")||"None"}`);
           })
           .on("mousemove", (event) => { tooltip.style("left",(event.pageX+10)+"px").style("top",(event.pageY+10)+"px"); })
           .on("mouseout", () => tooltip.style("display","none"))
